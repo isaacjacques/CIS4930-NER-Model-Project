@@ -11,6 +11,8 @@ from spacy.training import Example
 from spacy.cli.train import train
 import random
 from nltk.corpus import stopwords
+from spacy import displacy
+from datasets import load_dataset
 
 nltk.download('punkt')
 stop_words = set(stopwords.words('english'))
@@ -65,6 +67,8 @@ def remove_item(entity_type, item_name, filename=FILENAME):
     else:
         print(f"'{item_name}' not found in '{entity_type}'.")
 
+
+##deprecated
 def display_dictionary(filename=FILENAME):
     """Display all entities and their categories."""
     dictionary = load_dictionary(filename)
@@ -86,7 +90,7 @@ def fetch_wikipedia_content(topic, output_dir="sources/wikipedia"):
     # Check if file already exists
     if os.path.exists(filename):
         print(f"Skipping fetch: {filename} already exists.")
-        return None
+        return filename
     
     user_agent = "WikiBot/1.0 (contact: ij24d@fsu.edu)"
     wiki_wiki = wikipediaapi.Wikipedia(user_agent=user_agent, language="en")
@@ -118,17 +122,33 @@ def fetch_wikipedia_content(topic, output_dir="sources/wikipedia"):
     return page.fullurl
 
 def sync_wikipedia(filename=FILENAME):
-    """Search Wikipedia for topics in the entity dictionary and save content."""
     dictionary = load_dictionary(filename)
-    
+    updated_dictionary = {category: [] for category in dictionary}
+
     for category, items in dictionary.items():
         print(f"Searching Wikipedia for {category}...")
         for item in items:
             print(f"Fetching: {item}")
-            fetch_wikipedia_content(item)
+            result = fetch_wikipedia_content(item)
+
+            if result:
+                updated_dictionary[category].append(item)
+            else:
+                print(f"Removing '{item}' from '{category}' due to missing Wikipedia page.")
+
+    save_dictionary(updated_dictionary) 
+    print("Sync complete. Dictionary updated.")
+
   
 def normalize_topic(topic):
     return re.sub(r'[<>:"/\\|?*]', '', topic.replace(" ", "_"))
+
+def normalize_quote(text):
+    text = unicodedata.normalize("NFKC", text)  # Normalize Unicode (NFKC fixes different forms)
+    text = text.replace("\u201c", '"').replace("\u201d", '"')  # Fix curly double quotes
+    text = text.replace("\u2019", "'")  # Fix apostrophe
+    text = text.replace("\u2026", "...")  # Fix ellipses
+    return text
           
 def normalize_text(text):
     # Normalize Unicode characters
@@ -147,7 +167,7 @@ def format_paragraphs(text):
     # Merge broken lines into paragraphs
     return "\n".join(re.split(r'\n{2,}', text))
 
-def annotate_data(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FILE):
+def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FILE, overwrite=True):
     dictionary = load_dictionary()
     annotations = []
     all_entities = []
@@ -158,8 +178,8 @@ def annotate_data(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FILE):
     for entity_type, topics in dictionary.items():
         print(f"Working on {entity_type} entities")
         for topic in topics: 
-            if topic != "William Shakespeare":
-                 continue
+            #if topic != "William Shakespeare":
+            #     continue
             normalized_topic = normalize_topic(topic)
             filename = os.path.join(input_dir, f"{normalized_topic}.txt")
  
@@ -215,12 +235,66 @@ def annotate_data(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FILE):
                         })
 
     # Save annotations in spaCy JSONL format
-    with open(output_file, "w", encoding="utf-8") as f:
+    mode = "w" if overwrite else "a"
+    with open(output_file, mode, encoding="utf-8") as f:
         for ann in annotations:
             f.write(json.dumps(ann) + "\n")
     
     print(f"Annotations saved to {output_file}.")
 
+def annotate_quotes(output_file=ANNOTATIONS_FILE, overwrite=True):
+    dataset = load_dataset("Abirate/english_quotes")
+
+    processed_data = []
+    for item in dataset['train']:  # Assuming 'train' split exists
+        quote = normalize_text(item.get('quote', '').strip())  # Normalize Unicode
+        author = normalize_text(item.get('author', 'Unknown'))
+
+        # Add contextual sentence
+        text = generate_quote_variation(author, quote)
+        
+        # Annotate entities
+        entities = []
+
+        # Tag the author's name
+        start_idx = text.find(author)
+        if start_idx != -1:
+            end_idx = start_idx + len(author)
+            entities.append((start_idx, end_idx, "PERSON"))
+
+        # Tag the quote itself
+        quote_start = text.find(quote)
+        if quote_start != -1:
+            quote_end = quote_start + len(quote)
+            entities.append((quote_start, quote_end, "QUOTE"))
+
+        processed_data.append({"text": text, "entities": entities})
+    
+    mode = "w" if overwrite else "a"
+    with open(output_file, mode, encoding="utf-8") as f:
+        for item in processed_data:
+            spacy_format = {
+                "text": item["text"],
+                "entities": item["entities"],  # Matching Wikipedia format
+            }
+            f.write(json.dumps(spacy_format) + "\n")  # Keep UTF-8 output
+    print(f"Data successfully saved in {output_file}")
+
+def generate_quote_variation(author, quote):
+    """Generate a random variation of a quote sentence format."""
+    formats = [
+        f"{author} once said, {quote}",
+        f"According to {author}, {quote}",
+        f"In the words of {author}, {quote}",
+        f"{quote}, as {author} famously put it.",
+        f"{quote} - These were the words of {author}.",
+        f"As {author} stated, {quote}",
+        f"{author} expressed it best: {quote}",
+        f"It was {author} who remarked, {quote}",
+        f"{author} had this to say: {quote}",
+        f"Many remember when {author} said, {quote}"
+    ]
+    return random.choice(formats)
 
 def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     # Load a blank English model
@@ -244,13 +318,12 @@ def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
                 span = doc.char_span(start, end, label=label, alignment_mode="contract")
 
                 if span is None:
-                    print(f"Line {line_num}: Invalid span '{text[start:end]}' [{start}:{end}] in '{text}'")
+                    # print(f"Line {line_num}: Invalid span '{text[start:end]}' [{start}:{end}] in '{text}'")
                     continue  # Skip invalid spans
 
                 # Prevent overlapping entities
                 if any(token.i in seen_tokens for token in span):
                     print(f"Line {line_num}: Overlapping entity '{span.text}' [{start}:{end}] in '{text}'")
-                    input
                     continue  
 
                 ents.append(span)
@@ -277,22 +350,32 @@ def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     print(f"Training data saved as train_data.spacy ({len(train_docs)} examples)")
     print(f"Development data saved as dev_data.spacy ({len(dev_docs)} examples)")
 
+def display(filename="_testcase1.txt"):
+    nlp = spacy.load("./output/model-best") 
+    text = None
+    with open(filename, "r", encoding="utf-8") as f:
+        text = f.read()
+        doc = nlp(text)
 
+    if text is not None:
+        displacy.serve(doc, style="ent", host="127.0.0.1")
 
 if __name__ == "__main__":
     while True:
-        print("\nEntity Dictionary Manager")
+        print("\nNER Model Trainer")
         print("1. Add item")
         print("2. Search item")
-        print("3. Display dictionary")
-        print("4. Sync data")
-        print("5. Annotate data")
+        print("3. Sync wikipedia")
+        print("4. Annotate wikipedia")
+        print("5. Annotate quotes")
         print("6. Serialize data")
         print("7. Train Model")
-        print("8. Exit")
+        print("8. Display Model")
+        print("9. Exit")
 
         choice = input("Select an option: ")
-
+        
+  
         if choice == "1":
             entity_type = input("Enter entity category: ")
             new_items = input("Enter new items (comma-separated): ").split(",")
@@ -303,13 +386,17 @@ if __name__ == "__main__":
             print(search_item(item_name))
 
         elif choice == "3":
-            display_dictionary()
-
-        elif choice == "4":
             sync_wikipedia()
 
+        elif choice == "4":
+            overwrite_flag = input("Do you want to overwrite existing annotations? (Y/N): ").strip().upper()
+            overwrite = overwrite_flag == "Y"
+            annotate_wikipedia(overwrite=overwrite)
+
         elif choice == "5":
-            annotate_data()
+            overwrite_flag = input("Do you want to overwrite existing annotations? (Y/N): ").strip().upper()
+            overwrite = overwrite_flag == "Y"
+            annotate_quotes(overwrite=overwrite)
 
         elif choice == "6":
             serialize_data()
@@ -318,6 +405,9 @@ if __name__ == "__main__":
             train("config.cfg", output_path="./output")
 
         elif choice == "8":
+            display()
+
+        elif choice == "9":
             print("Exiting...")
             break
 
