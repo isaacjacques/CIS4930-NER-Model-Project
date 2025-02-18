@@ -8,7 +8,7 @@ from nltk.tokenize import sent_tokenize
 import spacy
 from spacy.tokens import DocBin
 from spacy.training import Example
-
+import random
 
 nltk.download('punkt')
 
@@ -144,7 +144,7 @@ def format_paragraphs(text):
     # Merge broken lines into paragraphs
     return "\n".join(re.split(r'\n{2,}', text))
 
-def annotate_sentences(input_dir="sources/wikipedia"):
+def annotate_sentences(input_dir="sources/wikipedia",output_file=ANNOTATIONS_FILE):
     """Iterate over all .txt files in the input_dir and annotate sentences containing entities."""
     dictionary = load_dictionary()
     annotations = []
@@ -159,12 +159,20 @@ def annotate_sentences(input_dir="sources/wikipedia"):
             
             for sentence in sentences:
                 entities = []
+                occupied_positions = set()
+
                 for entity_type, topics in dictionary.items():
-                    for topic in topics:
+                    for topic in sorted(topics, key=len, reverse=True):  # Prioritize longer matches
                         start = sentence.find(topic)
                         if start != -1:
                             end = start + len(topic)
+
+                            # Ensure no overlapping entities
+                            if any(pos in occupied_positions for pos in range(start, end)):
+                                continue
+                            
                             entities.append([start, end, entity_type])
+                            occupied_positions.update(range(start, end))  # Mark positions as used
                 
                 if entities:
                     annotations.append({
@@ -173,21 +181,20 @@ def annotate_sentences(input_dir="sources/wikipedia"):
                     })
 
     # Save annotations in spaCy JSONL format
-    with open(ANNOTATIONS_FILE, "w", encoding="utf-8") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         for ann in annotations:
             f.write(json.dumps(ann) + "\n")
     
-    print(f"Annotations saved to {ANNOTATIONS_FILE}.")
+    print(f"Annotations saved to {output_file}.")
 
-def serialize_data(filename=ANNOTATIONS_FILE):
+def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     # Load a blank English model
     nlp = spacy.blank("en")
-    # Create a DocBin object to store training examples
-    doc_bin = DocBin()
-    # Load your annotated data
-
-    with open(filename, "r", encoding="utf-8") as f:
-        for line in f:
+    # Create lists to store training and development examples
+    docs = []
+    # Load annotated data
+    with open(input_file, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, start=1):
             data = json.loads(line.strip())
             text = data["text"]
             entities = data["entities"]
@@ -197,16 +204,43 @@ def serialize_data(filename=ANNOTATIONS_FILE):
 
             # Add annotations
             ents = []
+            seen_tokens = set()
             for start, end, label in entities:
                 span = doc.char_span(start, end, label=label, alignment_mode="contract")
-                if span is not None:
-                    ents.append(span)
-            
+
+                if span is None:
+                    print(f"Line {line_num}: Invalid span '{text[start:end]}' [{start}:{end}] in '{text}'")
+                    continue  # Skip invalid spans
+
+                # Prevent overlapping entities
+                if any(token.i in seen_tokens for token in span):
+                    print(f"Line {line_num}: Overlapping entity '{span.text}' [{start}:{end}] in '{text}'")
+                    continue  
+
+                ents.append(span)
+                seen_tokens.update(token.i for token in span)
+                
             # Apply entity annotations
             doc.ents = ents
-            doc_bin.add(doc)
-    doc_bin.to_disk("train_data.spacy")
-    print("Training data saved as train_data.spacy")    
+            docs.append(doc)
+
+    # Shuffle data and split into train and dev sets
+    random.shuffle(docs)
+    split_point = int(len(docs) * split_ratio)
+    train_docs = docs[:split_point]
+    dev_docs = docs[split_point:]
+
+    # Convert to spaCy's binary format
+    train_doc_bin = DocBin(docs=train_docs)
+    dev_doc_bin = DocBin(docs=dev_docs)
+
+    # Save the datasets
+    train_doc_bin.to_disk("train_data.spacy")
+    dev_doc_bin.to_disk("dev_data.spacy")
+
+    print(f"Training data saved as train_data.spacy ({len(train_docs)} examples)")
+    print(f"Development data saved as dev_data.spacy ({len(dev_docs)} examples)")
+
 
 
 if __name__ == "__main__":
@@ -238,7 +272,7 @@ if __name__ == "__main__":
             sync_wikipedia()
 
         elif choice == "5":
-            annotate_sentences()
+            annotate_sentences(0.8)
 
         elif choice == "6":
             serialize_data()
