@@ -8,9 +8,12 @@ from nltk.tokenize import sent_tokenize
 import spacy
 from spacy.tokens import DocBin
 from spacy.training import Example
+from spacy.cli.train import train
 import random
+from nltk.corpus import stopwords
 
 nltk.download('punkt')
+stop_words = set(stopwords.words('english'))
 
 # Default filename for storing the entity dictionary
 FILENAME = "entity_dict.json"
@@ -144,41 +147,72 @@ def format_paragraphs(text):
     # Merge broken lines into paragraphs
     return "\n".join(re.split(r'\n{2,}', text))
 
-def annotate_sentences(input_dir="sources/wikipedia",output_file=ANNOTATIONS_FILE):
-    """Iterate over all .txt files in the input_dir and annotate sentences containing entities."""
+def annotate_data(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FILE):
     dictionary = load_dictionary()
     annotations = []
+    all_entities = []
+    for category, entities in dictionary.items():
+        all_entities.extend(entities)
     
     # Collect all .txt files in the input directory
-    for filename in os.listdir(input_dir):
-        if filename.endswith(".txt"):
-            file_path = os.path.join(input_dir, filename)
-            
-            with open(file_path, "r", encoding="utf-8") as f:
+    for entity_type, topics in dictionary.items():
+        print(f"Working on {entity_type} entities")
+        for topic in topics: 
+            if topic != "William Shakespeare":
+                 continue
+            normalized_topic = normalize_topic(topic)
+            filename = os.path.join(input_dir, f"{normalized_topic}.txt")
+ 
+            # Check if file for topic exists
+            if not os.path.exists(filename):
+                print(f"Skipping topic: {filename} does not exists.")
+                continue
+           
+            with open(filename, "r", encoding="utf-8") as f:
+                print(f"Annotating {topic}")
+
+                topic_parts = [word for word in topic.split() if word.lower() not in stop_words]
+
+                pattern = r"\b(" + "|".join(map(re.escape, sorted(all_entities+topic_parts, key=len, reverse=True))) + r")\b"    
+
                 sentences = f.readlines()
-            
-            for sentence in sentences:
-                entities = []
-                occupied_positions = set()
+                for sentence in sentences:
+                    entities = []
+                    occupied_positions = set()
+                    entity_counts = {}
 
-                for entity_type, topics in dictionary.items():
-                    for topic in sorted(topics, key=len, reverse=True):  # Prioritize longer matches
-                        start = sentence.find(topic)
-                        if start != -1:
-                            end = start + len(topic)
+                    # Use regex to find matches in the sentence
+                    for match in re.finditer(pattern, sentence, re.IGNORECASE):
+                        start, end = match.start(), match.end()
+                        matched_text = match.group(0).lower()
 
-                            # Ensure no overlapping entities
-                            if any(pos in occupied_positions for pos in range(start, end)):
-                                continue
-                            
+                        # Ensure no overlapping entities
+                        if any(pos in occupied_positions for pos in range(start, end)):
+                            continue
+
+                        entity_counts[matched_text] = entity_counts.get(matched_text, 0) + 1
+                        # If any entity appears more than once, skip the sentence
+                        if entity_counts[matched_text] > 1:
+                            break
+
+                        if matched_text in map(str.lower, [topic] + topic_parts):
                             entities.append([start, end, entity_type])
-                            occupied_positions.update(range(start, end))  # Mark positions as used
-                
-                if entities:
-                    annotations.append({
-                        "text": sentence.strip(),
-                        "entities": entities
-                    })
+                        else:
+                            for cat, items in dictionary.items():
+                                if matched_text in map(str.lower, items):
+                                    entities.append([start, end, cat])
+                                    break
+                            else:
+                                print(f"Could not find category for matched text: {matched_text}")
+                                continue  # Skip if not found
+
+                        occupied_positions.update(range(start, end))  # Mark positions as used
+
+                    if entities:
+                        annotations.append({
+                            "text": sentence.strip(),
+                            "entities": entities
+                        })
 
     # Save annotations in spaCy JSONL format
     with open(output_file, "w", encoding="utf-8") as f:
@@ -186,6 +220,7 @@ def annotate_sentences(input_dir="sources/wikipedia",output_file=ANNOTATIONS_FIL
             f.write(json.dumps(ann) + "\n")
     
     print(f"Annotations saved to {output_file}.")
+
 
 def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     # Load a blank English model
@@ -215,6 +250,7 @@ def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
                 # Prevent overlapping entities
                 if any(token.i in seen_tokens for token in span):
                     print(f"Line {line_num}: Overlapping entity '{span.text}' [{start}:{end}] in '{text}'")
+                    input
                     continue  
 
                 ents.append(span)
@@ -252,7 +288,8 @@ if __name__ == "__main__":
         print("4. Sync data")
         print("5. Annotate data")
         print("6. Serialize data")
-        print("7. Exit")
+        print("7. Train Model")
+        print("8. Exit")
 
         choice = input("Select an option: ")
 
@@ -272,12 +309,15 @@ if __name__ == "__main__":
             sync_wikipedia()
 
         elif choice == "5":
-            annotate_sentences(0.8)
+            annotate_data()
 
         elif choice == "6":
             serialize_data()
 
         elif choice == "7":
+            train("config.cfg", output_path="./output")
+
+        elif choice == "8":
             print("Exiting...")
             break
 
