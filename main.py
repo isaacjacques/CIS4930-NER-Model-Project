@@ -13,6 +13,8 @@ import random
 from nltk.corpus import stopwords
 from spacy import displacy
 from datasets import load_dataset
+import requests
+from bs4 import BeautifulSoup
 
 nltk.download('punkt')
 stop_words = set(stopwords.words('english'))
@@ -68,21 +70,7 @@ def remove_item(entity_type, item_name, filename=FILENAME):
         print(f"'{item_name}' not found in '{entity_type}'.")
 
 
-##deprecated
-def display_dictionary(filename=FILENAME):
-    """Display all entities and their categories."""
-    dictionary = load_dictionary(filename)
-    
-    if not dictionary:
-        print("The dictionary is empty.")
-        return
-    
-    for category, items in dictionary.items():
-        print(f"\n{category}:")
-        for item in items:
-            print(f"  - {item}")
-
-def fetch_wikipedia_content(topic, output_dir="sources/wikipedia"):
+def fetch_wikipedia_content(category, topic, output_dir="sources/wikipedia"):
     # Normalize topic for filename
     normalized_topic = normalize_topic(topic)
     filename = os.path.join(output_dir, f"{normalized_topic}.txt")
@@ -129,7 +117,7 @@ def sync_wikipedia(filename=FILENAME):
         print(f"Searching Wikipedia for {category}...")
         for item in items:
             print(f"Fetching: {item}")
-            result = fetch_wikipedia_content(item)
+            result = fetch_wikipedia_content(category, item)
 
             if result:
                 updated_dictionary[category].append(item)
@@ -158,10 +146,10 @@ def normalize_text(text):
     text = text.replace("\u2026", "...")  # Ellipses
 
     # Convert to ASCII and normalize spacing
-    text = unicodedata.normalize("NFKD", text)
-    text = re.sub(r'\s+', ' ', text)  # Remove excessive whitespace
-    text = text.replace(". . .", "...")  # Normalize ellipses
-    return text.strip()
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")  
+    text = re.sub(r'\s+', ' ', text).strip() 
+    text = text.replace(". . .", "...")
+    return text
 
 def format_paragraphs(text):
     # Merge broken lines into paragraphs
@@ -171,15 +159,18 @@ def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FI
     dictionary = load_dictionary()
     annotations = []
     all_entities = []
+    nlp = spacy.load("en_core_web_sm")
+
     for category, entities in dictionary.items():
-        all_entities.extend(entities)
+        modified_entities = [re.sub(r'\s+', '.', str(entity)) for entity in entities if isinstance(entity, str)]
+        all_entities.extend(modified_entities)
     
     # Collect all .txt files in the input directory
     for entity_type, topics in dictionary.items():
         print(f"Working on {entity_type} entities")
         for topic in topics: 
-            #if topic != "William Shakespeare":
-            #     continue
+        #    if topic != "William Shakespeare":
+        #         continue
             normalized_topic = normalize_topic(topic)
             filename = os.path.join(input_dir, f"{normalized_topic}.txt")
  
@@ -192,11 +183,17 @@ def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FI
                 print(f"Annotating {topic}")
 
                 topic_parts = [word for word in topic.split() if word.lower() not in stop_words]
+                topic_parts = [re.sub(r'\s+', '.', str(word)) for word in topic_parts if isinstance(word, str)]
 
-                pattern = r"\b(" + "|".join(map(re.escape, sorted(all_entities+topic_parts, key=len, reverse=True))) + r")\b"    
+                pattern = r"\b(" + "|".join(sorted(all_entities + topic_parts, key=len, reverse=True)) + r")\b"
+                # print(f"{pattern}")
 
                 sentences = f.readlines()
                 for sentence in sentences:
+
+                    #if not sentence.isascii(): # just skip this
+                    #    continue
+
                     entities = []
                     occupied_positions = set()
                     entity_counts = {}
@@ -205,6 +202,10 @@ def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FI
                     for match in re.finditer(pattern, sentence, re.IGNORECASE):
                         start, end = match.start(), match.end()
                         matched_text = match.group(0).lower()
+
+                        # Skip short sentences where its mostly the entity w out any context
+                        if (end - start) > len(sentence) / 2:
+                            continue
 
                         # Ensure no overlapping entities
                         if any(pos in occupied_positions for pos in range(start, end)):
@@ -224,15 +225,24 @@ def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FI
                                     break
                             else:
                                 print(f"Could not find category for matched text: {matched_text}")
-                                continue  # Skip if not found
+                                continue
 
                         occupied_positions.update(range(start, end))  # Mark positions as used
 
-                    if entities:
-                        annotations.append({
-                            "text": sentence.strip(),
-                            "entities": entities
-                        })
+                    doc = nlp(sentence.strip())
+                    spacy_entities = [(ent.start_char, ent.end_char, ent.label_) for ent in doc.ents]
+
+                    # If spaCy finds an entity that wasn't annotated, skip this sentence
+                    for start, end, label in spacy_entities:
+                        if not any(start == ent[0] and end == ent[1] for ent in entities):
+                            #print(f"Skipping sentence due to missed entity: {sentence.strip()}")
+                            break
+                    else:
+                        if entities:
+                            annotations.append({
+                                "text": sentence.strip(),
+                                "entities": entities
+                            })
 
     # Save annotations in spaCy JSONL format
     mode = "w" if overwrite else "a"
@@ -241,60 +251,6 @@ def annotate_wikipedia(input_dir="sources/wikipedia", output_file=ANNOTATIONS_FI
             f.write(json.dumps(ann) + "\n")
     
     print(f"Annotations saved to {output_file}.")
-
-def annotate_quotes(output_file=ANNOTATIONS_FILE, overwrite=True):
-    dataset = load_dataset("Abirate/english_quotes")
-
-    processed_data = []
-    for item in dataset['train']:  # Assuming 'train' split exists
-        quote = normalize_text(item.get('quote', '').strip())  # Normalize Unicode
-        author = normalize_text(item.get('author', 'Unknown'))
-
-        # Add contextual sentence
-        text = generate_quote_variation(author, quote)
-        
-        # Annotate entities
-        entities = []
-
-        # Tag the author's name
-        start_idx = text.find(author)
-        if start_idx != -1:
-            end_idx = start_idx + len(author)
-            entities.append((start_idx, end_idx, "PERSON"))
-
-        # Tag the quote itself
-        quote_start = text.find(quote)
-        if quote_start != -1:
-            quote_end = quote_start + len(quote)
-            entities.append((quote_start, quote_end, "QUOTE"))
-
-        processed_data.append({"text": text, "entities": entities})
-    
-    mode = "w" if overwrite else "a"
-    with open(output_file, mode, encoding="utf-8") as f:
-        for item in processed_data:
-            spacy_format = {
-                "text": item["text"],
-                "entities": item["entities"],  # Matching Wikipedia format
-            }
-            f.write(json.dumps(spacy_format) + "\n")  # Keep UTF-8 output
-    print(f"Data successfully saved in {output_file}")
-
-def generate_quote_variation(author, quote):
-    """Generate a random variation of a quote sentence format."""
-    formats = [
-        f"{author} once said, {quote}",
-        f"According to {author}, {quote}",
-        f"In the words of {author}, {quote}",
-        f"{quote}, as {author} famously put it.",
-        f"{quote} - These were the words of {author}.",
-        f"As {author} stated, {quote}",
-        f"{author} expressed it best: {quote}",
-        f"It was {author} who remarked, {quote}",
-        f"{author} had this to say: {quote}",
-        f"Many remember when {author} said, {quote}"
-    ]
-    return random.choice(formats)
 
 def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     # Load a blank English model
@@ -350,7 +306,7 @@ def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     print(f"Training data saved as train_data.spacy ({len(train_docs)} examples)")
     print(f"Development data saved as dev_data.spacy ({len(dev_docs)} examples)")
 
-def display(filename="_testcase1.txt"):
+def display(filename="./sources/generated/2.txt"):
     nlp = spacy.load("./output/model-best") 
     text = None
     with open(filename, "r", encoding="utf-8") as f:
@@ -367,10 +323,9 @@ if __name__ == "__main__":
         print("2. Search item")
         print("3. Sync wikipedia")
         print("4. Annotate wikipedia")
-        print("5. Annotate quotes")
-        print("6. Serialize data")
-        print("7. Train Model")
-        print("8. Display Model")
+        print("5. Serialize data")
+        print("6. Train Model")
+        print("7. Display Model")
         print("9. Exit")
 
         choice = input("Select an option: ")
@@ -394,17 +349,12 @@ if __name__ == "__main__":
             annotate_wikipedia(overwrite=overwrite)
 
         elif choice == "5":
-            overwrite_flag = input("Do you want to overwrite existing annotations? (Y/N): ").strip().upper()
-            overwrite = overwrite_flag == "Y"
-            annotate_quotes(overwrite=overwrite)
-
-        elif choice == "6":
             serialize_data()
 
-        elif choice == "7":
+        elif choice == "6":
             train("config.cfg", output_path="./output")
 
-        elif choice == "8":
+        elif choice == "7":
             display()
 
         elif choice == "9":
