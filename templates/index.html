@@ -104,6 +104,35 @@
             })
             .catch(error => console.error("Error:", error));
         }
+
+        function saveResults() {
+            let userText = document.getElementById("input-text").value;
+            let selectedEntities = [];
+            document.querySelectorAll("input[name='entity']:checked").forEach(checkbox => {
+                selectedEntities.push(checkbox.value);
+            });
+
+            fetch("/save", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ 
+                    text: userText,
+                    selected_entities: selectedEntities
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert("File saved successfully!");
+                    //window.location.href = data.file_path;
+                } else {
+                    alert("Error saving file.");
+                }
+            })
+            .catch(error => console.error("Error:", error));
+        }
     </script>
 </head>
 <body>
@@ -113,6 +142,7 @@
         <div class="input-container">
             <textarea id="input-text" class="text-box" placeholder="Type or paste text here..." oninput="updateEntities()"></textarea>
             <input type="file" id="file-input" accept=".pdf, .docx" onchange="uploadFile()">
+            <button onclick="saveResults()">Save Results</button>
         </div>
 
         <div class="controls">

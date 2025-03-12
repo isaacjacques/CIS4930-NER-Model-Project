@@ -3,6 +3,7 @@ import spacy
 from spacy import displacy
 import fitz  # PyMuPDF for PDFs
 from docx import Document
+from docx.shared import RGBColor
 import os
 
 app = Flask(__name__)
@@ -25,6 +26,23 @@ COLORS = {
     "PERIOD": "magenta",
     "TECHNIQUE": "indigo",
     "MOVIE_TV": "violet"
+}
+
+ENTITY_COLORS = {
+    "PERSON": RGBColor(50, 205, 50),   # Lime
+    "LIT_WORK": RGBColor(0, 0, 255),   # Blue
+    "ART_WORK": RGBColor(0, 128, 0),   # Green
+    "ART_MOVEMENT": RGBColor(255, 165, 0),  # Orange
+    "ORG": RGBColor(128, 0, 128),  # Purple
+    "PLACE": RGBColor(0, 128, 128),  # Teal
+    "EVENT": RGBColor(0, 255, 255),  # Cyan
+    "GENRE": RGBColor(255, 20, 147),  # Pink
+    "CHARACTER": RGBColor(165, 42, 42),  # Brown
+    "QUOTE": RGBColor(255, 215, 0),  # Gold
+    "AWARD": RGBColor(50, 205, 50),  # Lime
+    "PERIOD": RGBColor(255, 0, 255),  # Magenta
+    "TECHNIQUE": RGBColor(75, 0, 130),  # Indigo
+    "MOVIE_TV": RGBColor(148, 0, 211)  # Violet
 }
 
 # Extract entity labels from the model itself
@@ -85,6 +103,46 @@ def upload_file():
     extracted_text = extract_text_from_file(file.filename)
 
     return jsonify({"text": extracted_text})
+
+@app.route("/save", methods=["POST"])
+def save_results():
+    data = request.json
+    text = data.get("text", "").strip()
+    selected_entities = data.get("selected_entities", [])
+
+    if not text:
+        return jsonify({"error": "No content to save"}), 400
+
+    doc = Document()
+    para = doc.add_paragraph()
+
+    # Process text with NLP model
+    nlp_text = nlp(text)
+
+    # Apply entity color formatting
+    last_index = 0
+    for ent in nlp_text.ents:
+        if ent.label_ in selected_entities:
+            # Add normal text before entity
+            if ent.start_char > last_index:
+                para.add_run(text[last_index:ent.start_char])
+
+            # Add colored entity text
+            entity_run = para.add_run(ent.text)
+            entity_run.bold = True
+            entity_run.font.color.rgb = ENTITY_COLORS.get(ent.label_, RGBColor(128, 128, 128))  # Default gray
+
+            last_index = ent.end_char
+
+    # Add remaining text after last entity
+    if last_index < len(text):
+        para.add_run(text[last_index:])
+
+    # Save as .docx file
+    file_path = "labeled_text.docx"
+    doc.save(file_path)
+
+    return jsonify({"success": True, "file_path": file_path})
 
 def extract_text_from_file(file_path):
     """Extract text from PDF or DOCX file."""
