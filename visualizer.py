@@ -1,6 +1,9 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import spacy
 from spacy import displacy
+import fitz  # PyMuPDF for PDFs
+from docx import Document
+import os
 
 app = Flask(__name__)
 nlp = spacy.load("./output/model-best")
@@ -62,6 +65,42 @@ def filter_entities():
     html = displacy.render(doc, style="ent", options=options, page=False)
 
     return {"html": html}
+
+@app.route("/upload", methods=["POST"])
+def upload_file():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+
+    if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
+        return jsonify({"error": "Invalid file format. Please upload a PDF or DOCX."}), 400
+
+    #file_path = os.path.join("uploads", file.filename)
+    #file.save(file_path)
+
+    extracted_text = extract_text_from_file(file.filename)
+
+    return jsonify({"text": extracted_text})
+
+def extract_text_from_file(file_path):
+    """Extract text from PDF or DOCX file."""
+    text = ""
+
+    if file_path.endswith(".pdf"):
+        doc = fitz.open(file_path)
+        for page in doc:
+            text += page.get_text("text") + "\n"
+
+    elif file_path.endswith(".docx"):
+        doc = Document(file_path)
+        for para in doc.paragraphs:
+            text += para.text + "\n"
+
+    return text.strip()
 
 if __name__ == "__main__":
     app.run(debug=True)

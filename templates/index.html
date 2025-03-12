@@ -68,13 +68,40 @@
                 document.getElementById("ner-display").innerHTML = data.html;
             });
         }
+
+        function uploadFile() {
+            let fileInput = document.getElementById("file-input");
+            let file = fileInput.files[0];
+
+            if (!file) {
+                alert("Please select a file.");
+                return;
+            }
+
+            let formData = new FormData();
+            formData.append("file", file);
+
+            fetch("/upload", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("input-text").value = data.text;  // Set extracted text
+                updateEntities();  // Update visualization
+            })
+            .catch(error => console.error("Error:", error));
+        }
     </script>
 </head>
 <body>
     <h1>Named Entity Recognition Visualization</h1>
 
     <div class="container">
-        <textarea id="input-text" class="text-box" placeholder="Type or paste text here..." oninput="updateEntities()"></textarea>
+        <div>
+            <textarea id="input-text" class="text-box" placeholder="Type or paste text here..." oninput="updateEntities()"></textarea>
+            <input type="file" id="file-input" accept=".pdf, .docx" onchange="uploadFile()">
+        </div>
 
         <div class="controls">
             <h3>Select Entity Types:</h3>
