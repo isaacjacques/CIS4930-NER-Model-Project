@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import spacy
 from spacy import displacy
-import fitz  # PyMuPDF for PDF extraction
+import fitz
 from docx import Document
 from docx.shared import RGBColor
 from io import BytesIO
@@ -9,7 +9,6 @@ from io import BytesIO
 app = Flask(__name__)
 nlp = spacy.load("./output/model-best")
 
-# Define color schemes for visualization and DOCX formatting
 COLORS = {
     "PERSON": "lime",
     "LIT_WORK": "blue",
@@ -28,7 +27,7 @@ COLORS = {
 }
 
 ENTITY_COLORS = {
-    "PERSON": RGBColor(50, 205, 50),       # Lime
+    "PERSON": RGBColor(50, 205, 50),         # Lime
     "LIT_WORK": RGBColor(0, 0, 255),         # Blue
     "ART_WORK": RGBColor(0, 128, 0),         # Green
     "ART_MOVEMENT": RGBColor(255, 165, 0),     # Orange
@@ -44,17 +43,12 @@ ENTITY_COLORS = {
     "MOVIE_TV": RGBColor(148, 0, 211)        # Violet
 }
 
-# Get the entity labels from the model's NER pipe and sort them.
+# Get the entity labels from the model's NER pipe so its not dependant on the doc
 MODEL_ENTITIES = sorted(nlp.get_pipe("ner").labels)
-
 
 @app.route("/")
 def index():
-    """
-    Render the main page with an initial (empty) visualization.
-    """
     entity_types = MODEL_ENTITIES
-    # Process an empty string for initial render
     doc = nlp("")
     options = {
         "ents": entity_types,
@@ -83,9 +77,6 @@ def filter_entities():
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
-    """
-    Extract text from a PDF file given its byte content.
-    """
     text = ""
     with fitz.open(stream=file_bytes, filetype="pdf") as doc:
         for page in doc:
@@ -94,9 +85,6 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def extract_text_from_docx(file_bytes: bytes) -> str:
-    """
-    Extract text from a DOCX file given its byte content.
-    """
     doc = Document(BytesIO(file_bytes))
     text = "\n".join(para.text for para in doc.paragraphs)
     return text.strip()
@@ -146,10 +134,8 @@ def save_results():
     last_index = 0
     for ent in processed_doc.ents:
         if ent.label_ in selected_entities:
-            # Add unformatted text before the entity
             if ent.start_char > last_index:
                 para.add_run(text[last_index:ent.start_char])
-            # Add the entity text with bold and color formatting
             entity_run = para.add_run(ent.text)
             entity_run.bold = True
             entity_run.font.color.rgb = ENTITY_COLORS.get(
@@ -157,11 +143,10 @@ def save_results():
             )
             last_index = ent.end_char
 
-    # Add any remaining text after the last entity
     if last_index < len(text):
         para.add_run(text[last_index:])
 
-    file_path = "labeled_text.docx"
+    file_path = "Results.docx"
     doc.save(file_path)
     return jsonify({"success": True, "file_path": file_path})
 
