@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NER Visualization</title>
+    <style>
+        body {
+            background-color: #007BFF;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+        }
+        .container {
+            display: flex;  /* Flexbox for side-by-side layout */
+            justify-content: space-between;
+            width: 80%;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            color: black;
+        }
+        .text-box {
+            width: 40%;
+            height: 200px;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            overflow-y: scroll;  /* Scrollbar for long text */
+            white-space: pre-wrap;
+            background: #f9f9f9;
+        }
+        .controls {
+            width: 50%;
+            text-align: left;
+        }
+    </style>
+    <script>
+        function toggleAll(source) {
+            let checkboxes = document.querySelectorAll("input[name='entity']");
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = source.checked;
+            });
+            updateEntities();
+        }
+    
+        function updateEntities() {
+            let selectedEntities = [];
+            document.querySelectorAll("input[name='entity']:checked").forEach(checkbox => {
+                selectedEntities.push(checkbox.value);
+            });
+
+            let userText = document.getElementById("input-text").value;
+
+            fetch("/filter", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ 
+                    selected_entities: selectedEntities,
+                    text: userText  // Send text to backend
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById("ner-display").innerHTML = data.html;
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>Named Entity Recognition Visualization</h1>
+
+    <div class="container">
+        <textarea id="input-text" class="text-box" placeholder="Type or paste text here..." oninput="updateEntities()"></textarea>
+
+        <div class="controls">
+            <h3>Select Entity Types:</h3>
+            <input type="checkbox" id="select-all" onclick="toggleAll(this)"> <strong>Select All</strong><br>
+            {% for entity in entity_types %}
+                <input type="checkbox" name="entity" value="{{ entity }}" onclick="updateEntities()"> {{ entity }}<br>
+            {% endfor %}
+        </div>
+    </div>
+
+    <hr>
+    <div class="container">
+        <div id="ner-display">{{ html|safe }}</div>
+    </div>
+</body>
+</html>

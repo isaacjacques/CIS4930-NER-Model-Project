@@ -306,7 +306,7 @@ def serialize_data(input_file=ANNOTATIONS_FILE, split_ratio=0.8):
     print(f"Training data saved as train_data.spacy ({len(train_docs)} examples)")
     print(f"Development data saved as dev_data.spacy ({len(dev_docs)} examples)")
 
-def display(filename="./sources/generated/2.txt"):
+def display(filename="sample1.txt"):
     nlp = spacy.load("./output/model-best") 
     text = None
     with open(filename, "r", encoding="utf-8") as f:
