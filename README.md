@@ -1,53 +1,71 @@
+# CIS4930-NER-Model-Project
 
-Project Domain: "arts and literature"
-NER Enetities:
-1. Persons (Authors, Poets, Artists, etc.)
-Examples: Shakespeare, Hemingway, Virginia Woolf, Picasso, Emily Dickinson.
-2. Literary Works (Books, Poems, Plays, Novels, etc.)
-Examples: "Moby Dick", "Hamlet", "The Great Gatsby", "The Catcher in the Rye".
-3. Artworks (Paintings, Sculptures, etc.)
-Examples: "Starry Night", "The Thinker", "Guernica", "Mona Lisa".
-4. Art Movements or Styles
-Examples: Surrealism, Impressionism, Baroque, Modernism, Realism.
-5. Organizations (Literary Societies, Art Institutions, Publishers, etc.)
-Examples: The Royal Academy of Arts, Penguin Books, National Gallery, The New York Times (for literary articles).
-6. Places (Museums, Art Galleries, Libraries, Literary Locations, etc.)
-Examples: The Louvre, The British Museum, The Globe Theatre, The Library of Alexandria.
-7. Events (Literary Awards, Art Exhibitions, Historical Events)
-Examples: Booker Prize, Venice Biennale, The Harlem Renaissance, The Parisian Salon.
-8. Genres (Artistic, Literary, or Musical Genres)
-Examples: Gothic, Science Fiction, Romance, Jazz, Classical Music.
-9. Characters (Fictional or Real-Life Figures)
-Examples: Hamlet, Harry Potter, The Hunchback of Notre-Dame, Anne Frank.
-10. Quotes or Famous Lines
-Examples: “To be, or not to be, that is the question.”, “It was the best of times, it was the worst of times.”
-11. Awards (Literary or Artistic Prizes)
-Examples: Nobel Prize in Literature, Pulitzer Prize, Academy Awards (Oscars), Turner Prize.
-12. Periods (Literary or Artistic Time Periods)
-Examples: The Romantic Era, The Renaissance, The Enlightenment, The Modernist Period.
-13. Techniques or Forms
-Examples: Allegory, Metaphor, Sonnet, Free Verse, Watercolor, Collage.
-14. Movies or TV Adaptations
-Examples: "The Lord of the Rings" (movie), "Pride and Prejudice" (film adaptation), "Sherlock Holmes" (TV series).
+## Project Overview
 
-1. PERSON
-2. LIT_WORK (ORG, WORK_OF_ART)
-3. ART_WORK
-4. ART_MOVEMENT (NORP)
-5. ORG
-6. PLACE (GPE, LOC, FAC)
-7. EVENT 
-8. GENRE  
-9. CHARACTER
-10. QUOTE 
-11. AWARD (EVENT)
-12. PERIOD 
-13. TECHNIQUE
-14. MOVIE_TV
+This project demonstrates the development of a custom Named Entity Recognition (NER) model using spaCy, tailored for the arts and literature domain, and a Flask-based web application to visualize entity tagging in user-provided text or uploaded documents (PDF/DOCX). 
 
-PERSON,LIT_WORK,ART_WORK,ART_MOVEMENT,ORG,PLACE,EVENT,GENRE,CHARACTER,QUOTE,AWARD,PERIOD,TECHNIQUE,MOVIE_TV
+## Objectives
 
-Phase-I (due feb. 21): implement an NER, pref w a model. Dictionary or rules or thir combination are acceptable.
+- **Design & Train a Domain-Specific NER Model**: Build a spaCy model capable of recognizing entities such as authors, literary works, artworks, genres, and more.
+- **Develop a Web Interface**: Create a Flask app that allows users to paste text or upload DOCX/PDF files, apply NER, filter by entity type, and download annotated results.
+- **Handle Document I/O**: Implement robust extraction from PDFs (using PyMuPDF) and DOCX (using python‑docx), and save highlighted output back into a Word document.
+- **Visualize Entity Tags**: Leverage spaCy’s `displaCy` visualizer with customized colors to clearly distinguish entity categories.
 
-Phase-II(due march 14): Add buttons for each Entity type in display, add open button to read file (MS Word or PDF), display in text box -> NER results in another text box
-Add save button for NER result file as MS Word to disk.
+## Key Features
+
+- **Custom Entity Set**: 14 tailored entity types including PERSON, LIT\_WORK, ART\_WORK, ART\_MOVEMENT, ORG, PLACE, EVENT, GENRE, CHARACTER, QUOTE, AWARD, PERIOD, TECHNIQUE, and MOVIE\_TV.
+- **Interactive Filtering**: Toggle entity categories on and off via checkboxes to focus on specific types.
+- **File Upload & Download**:
+  - Upload PDF/DOCX -> extract and display raw text.
+  - Annotate and download results as a formatted DOCX with colored, bolded entity runs.
+- **Annotation Tools**: Scripts for dictionary-based annotation (`annotator.py`) and Wikipedia-based entity dictionary syncing (`main.py`).
+
+## Technology Stack
+
+- **Language & Framework**: Python 3.8+, Flask for web server.
+- **NLP**:
+  - **spaCy**: Training (`spacy.training`) and inference pipeline.
+  - **displaCy**: In-browser entity visualization.
+  - **NLTK**: Sentence tokenization and stopword filtering.
+- **Document Processing**:
+  - **PyMuPDF (fitz)**: PDF text extraction.
+  - **python‑docx**: Read/write DOCX files with styled runs.
+- **Data Sources & Utilities**:
+  - **Wikipedia API**: Automated fetching of entity contexts.
+  - **BeautifulSoup**: HTML parsing for ancillary scraping.
+  - **datasets**: Loading/serializing training splits.
+- **Supporting Tools**: JSON for annotations, regex for normalization, `DocBin` for spaCy binary data.
+
+## Skills & Competencies Demonstrated
+
+- **Machine Learning / NLP**: Data annotation, model serialization, training custom NER with spaCy’s `config.cfg`, evaluating entity performance.
+- **Software Engineering**:
+  - End‑to‑end pipeline design: collecting, annotating, training, deploying.
+  - Modular code organization across training, annotation, and visualization scripts.
+- **Web Development**:
+  - Building RESTful endpoints (`/filter`, `/upload`, `/save`) and templating with Jinja2.
+  - Client‑side interaction with AJAX to dynamically update `displaCy` output.
+- **Data Processing**:
+  - Complex text normalization, Unicode handling, and regex-driven entity detection.
+  - Managing file I/O and binary streams securely and efficiently.
+
+
+## Demo
+
+### Visualizer App
+
+![Visualizer App](images/Default.JPG)
+
+### Entity Tagging Example
+
+![Entity Tagging](images/EntityTagging.JPG)
+
+### Model Trainer
+
+![Model Trainer](images/ModelTrainerMenu.JPG)
+
+### Training Example
+
+![Model Training Example](images/ModelTrainingExample.JPG)
+
+
